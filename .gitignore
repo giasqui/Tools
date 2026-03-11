@@ -1,0 +1,7 @@
+/target/
+/.settings/
+/.project
+/.classpath
+/bin/
+*.log
+printscreen/                        <-- Escludiamo le catture temporanee

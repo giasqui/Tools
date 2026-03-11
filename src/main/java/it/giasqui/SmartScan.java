@@ -1,0 +1,239 @@
+package it.giasqui;
+
+//Image rotation: https://blog.idrsolutions.com/2019/05/image-rotation-in-java/
+//OCR: https://tools.pdf24.org/en/ocr-pdf
+//Decompiler: https://jdec.app/
+//Java Robot: https://www.javatpoint.com/java-robot
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.math.BigInteger;
+import java.nio.file.DirectoryNotEmptyException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Paths;
+import java.util.Scanner;
+
+import javax.imageio.ImageIO;
+
+import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
+import org.apache.poi.util.Units;
+import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
+
+import it.giasqui.timestamp.TimeStamp;
+
+import java.awt.AWTException;
+import java.awt.Robot;
+import java.awt.Rectangle;
+import java.awt.image.AffineTransformOp;
+import java.awt.image.BufferedImage;
+import java.awt.image.MultiResolutionImage;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
+import java.awt.geom.AffineTransform;
+
+
+
+public class SmartScan {
+
+	@SuppressWarnings("resource")
+	public static void main(String[] args) throws IOException, AWTException, InterruptedException, InvalidFormatException{
+	
+		TimeStamp timestamp = new TimeStamp();
+		
+		System.out.println(timestamp.timeStamp());
+		
+		//create robot
+		Robot robot = new Robot();
+		System.out.println("Robot created");
+		
+		//create dimension of screen
+		//Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+		
+		//create rectangle of print screen
+		//Rectangle(int x, int y, int width, int height)
+		
+		//Documento da acquisire ruotato di 90 gradi in senso antiorario (landscape).
+		//Caso del Learning on Demand di OpenText.
+		//Rectangle screenRectangle = new Rectangle(350,100,1225,960);
+		
+		//Documento da acquisire regolarmente posizionato (portrait).
+		Rectangle screenRectangle = new Rectangle(620,115,670,865);
+		
+		//create XWPF document
+		XWPFDocument document = new XWPFDocument();
+		
+		//create file word where to save print screen
+		Scanner keyboard = new Scanner(System.in);
+		System.out.println("Inserire il path dove salvare il file word: ");
+		String filePath = keyboard.nextLine();
+		System.out.println("Il path del file word �: " + filePath);
+		System.out.println("Inserire il nome da assegnare al file word: ");
+		String fileName = keyboard.nextLine();
+		System.out.println("Il path assoluto del file word �: " + filePath + "\\" + fileName + ".docx");
+
+		FileOutputStream fout = new FileOutputStream(new File(filePath + "/" + fileName + ".docx"));
+		
+		//create file of print screen
+		System.out.println("Inserire il path dove salvare gli screenshot: ");
+		String imagePath = keyboard.nextLine();
+		System.out.println("Il path del file word �: " + imagePath);
+	    File directory = new File(imagePath);
+	    if (! directory.exists()){
+	        directory.mkdir();
+	        // If you require it to make the entire directory path including parents,
+	        // use directory.mkdirs(); here instead.
+	    }
+		
+	    File file = null;
+		File fileRotated = null;
+
+		//insert number of pages
+		System.out.println("Inserire il numero di pagine: ");
+		String pagesNumber = keyboard.nextLine();
+		int pages = Integer.parseInt(pagesNumber);
+		System.out.println("Il numero di pagine �: " + pagesNumber);
+		System.out.println("Seleziona entro 10 secondi il documento da scansionare.");
+		System.out.println("Se si sta cambiando pagina col mouse e non con la freccia destra, posizionare il mouse sul punto su cui si vuole simulare il click.");
+		
+		try
+		{
+			//delay 4ms
+			System.out.println("Start Sleep -set page where you want to do the print screen");
+			Thread.sleep(12000);
+		}
+		catch (InterruptedException e)
+		{
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		for (int i=0; i< pages; i++) {
+
+			//create file of print screen
+			file = new File(imagePath + "/screenshot.jpg");
+			fileRotated = new File(imagePath + "/rotatedImage_" + timestamp.timeStamp() + ".jpg");
+			
+			BufferedImage image = robot.createScreenCapture(screenRectangle);
+			//MultiResolutionImage image = robot.createMultiResolutionScreenCapture(screenRectangle);
+			ImageIO.write(image, "jpg", file);
+			
+			//Rotate image.
+			//Riportare tra parentesi la rotazione in gradi da impartire alla pagina.
+			//final double rads = Math.toRadians(90);	//Documento da acquisire ruotato di 90 gradi in senso antiorario.
+			final double rads = Math.toRadians(0);	//Documento da acquisire regolarmente posizionato.
+			final double sin = Math.abs(Math.sin(rads));
+			final double cos = Math.abs(Math.cos(rads));
+			final int w = (int) Math.floor(image.getWidth() * cos + image.getHeight() * sin);
+			final int h = (int) Math.floor(image.getHeight() * cos + image.getWidth() * sin);
+	//		System.out.println("rads = " + rads);
+	//		System.out.println("sin = " + sin);
+	//		System.out.println("cos = " + cos);
+	//		System.out.println("w = " + w);
+	//		System.out.println("h = " + h);
+			final BufferedImage rotatedImage = new BufferedImage(w, h, image.getType());
+			final AffineTransform at = new AffineTransform();
+			at.translate(w / 2, h / 2);
+			at.rotate(rads,0, 0);
+			at.translate(-image.getWidth() / 2, -image.getHeight() / 2);
+			final AffineTransformOp rotateOp = new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
+			rotateOp.filter(image,rotatedImage);
+			
+			ImageIO.write(rotatedImage, "jpg", fileRotated);
+			//ImageIO.write(image, "jpg", fileRotated);
+			
+			//Page +
+			//Gestione del cambio pagina se da tastiera o da mouse.
+			
+			//Press and release the right arrow key.
+			//robot.keyPress(KeyEvent.VK_RIGHT); 
+			//robot.keyRelease(KeyEvent.VK_RIGHT);
+			
+			//Press and release the right arrow key of the keypad. If does not work try with Bloc Num disabled.
+			//robot.keyPress(KeyEvent.VK_KP_RIGHT);
+			//robot.keyRelease(KeyEvent.VK_KP_RIGHT);
+
+			//Press and release the regular right arrow key and not refers to the right arrow key on the numeric keypad.
+			//robot.keyPress(KeyEvent.VK_RIGHT);
+			//robot.keyRelease(KeyEvent.VK_RIGHT);
+			
+			//Press left mouse button.
+			//In questo caso bisogna posizionare manualmente il mouse sul punto dove si vuole simulare il click.
+			robot.mousePress(InputEvent.BUTTON1_MASK);
+			robot.mouseRelease(InputEvent.BUTTON1_MASK);
+			
+			Thread.sleep(1500);	
+			
+			// create paragraph and run
+			XWPFParagraph paragraph = document.createParagraph();
+			paragraph.setAlignment(ParagraphAlignment.CENTER);	//Align center inside word. https://www.javatpoint.com/apache-poi-word-aligning  
+			XWPFRun run = paragraph.createRun();
+			
+			// create an input stream of image
+			FileInputStream imageData = new FileInputStream(fileRotated);
+			
+			// Retrieving the image file name and image type
+			int imageType = XWPFDocument.PICTURE_TYPE_JPEG;
+			String imageFileName = fileRotated.getName();
+			
+			// Setting the width and height of the image
+			int width = 620;
+			int height = 780;
+			
+			// Adding the picture using the addPicture() method and writing into the document
+			run.addPicture(imageData, imageType, imageFileName,Units.toEMU(width),Units.toEMU(height));
+			
+			// Set word document margin to 0.
+			// https://stackoverflow.com/questions/17787176/spacing-and-margin-settings-in-ms-word-document-using-apache-poi-docx
+		    CTSectPr sectPr = document.getDocument().getBody().addNewSectPr();
+		    CTPageMar pageMar = sectPr.addNewPgMar();
+		    pageMar.setLeft(BigInteger.valueOf(0L));
+		    pageMar.setTop(BigInteger.valueOf(0L));
+		    pageMar.setRight(BigInteger.valueOf(0L));
+		    pageMar.setBottom(BigInteger.valueOf(0L));
+		
+		    // Close FileInputStream in order to delete file later.
+		    imageData.close();
+			
+		}
+		
+		document.write(fout);
+		fout.close();
+//		document.close();
+
+		// Delete the images.
+		try
+      {
+          Files.deleteIfExists(Paths.get(file.getPath()));
+          System.out.println(file.getPath() + " deletion successful.");
+//          Files.deleteIfExists(Paths.get(fileRotated.getPath()));
+//          System.out.println(fileRotated.getPath() + " deletion successful.");
+      }
+      catch(NoSuchFileException e)
+      {
+          System.out.println("No such file/directory exists");
+      }
+      catch(DirectoryNotEmptyException e)
+      {
+          System.out.println("Directory is not empty.");
+      }
+      catch(IOException e)
+      {
+          System.out.println("Invalid permissions.");
+      }
+		
+//		System.out.println("file.getPath() = " + file.getPath());
+//		System.out.println("file.getAbsolutePath() = " + file.getAbsolutePath());
+		System.out.println("END - Check file at: " + filePath + "\\"+fileName+".docx");
+      System.out.println("You can now convert it in pdf and then do OCR with https://tools.pdf24.org/en/ocr-pdf.");
+
+	}
+
+}
