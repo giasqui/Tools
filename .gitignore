@@ -1,0 +1,17 @@
+# Compilati
+*.class
+/target/
+/bin/
+
+# File dell'IDE (Eclipse/IntelliJ)
+.metadata/
+.classpath
+.project
+.settings/
+*.launch
+
+# File temporanei di SmartScan
+/printscreen/
+*.log
+
+.metadata/
