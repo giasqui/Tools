@@ -1,0 +1,199 @@
+package it.giasqui;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import javax.imageio.ImageIO;
+
+// Import per Apache POI (Word)
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.util.Units;
+
+import it.giasqui.timestamp.TimeStamp;
+
+public class SmartScanGUI extends JFrame {
+
+    private JTextField txtFilePath, txtFileName, txtPages, txtX, txtY;
+    private JButton btnBrowse, btnCapture, btnStart;
+    private JTextArea logArea;
+
+    public SmartScanGUI() {
+        setTitle("SmartScan Pro - v1.0");
+        setSize(500, 600);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout(10, 10));
+
+        // Pannello Input
+        JPanel inputPanel = new JPanel(new GridLayout(6, 2, 5, 5));
+        inputPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        inputPanel.add(new JLabel("Cartella Destinazione:"));
+        txtFilePath = new JTextField();
+        inputPanel.add(txtFilePath);
+
+        btnBrowse = new JButton("Sfoglia...");
+        inputPanel.add(new JLabel("")); 
+        inputPanel.add(btnBrowse);
+
+        inputPanel.add(new JLabel("Nome File (senza estensione):"));
+        txtFileName = new JTextField("Scansione_" + TimeStamp.timeStamp());
+        inputPanel.add(txtFileName);
+
+        inputPanel.add(new JLabel("Numero Pagine:"));
+        txtPages = new JTextField("1");
+        inputPanel.add(txtPages);
+
+        inputPanel.add(new JLabel("Coordinate (X, Y):"));
+        JPanel coordPanel = new JPanel(new GridLayout(1, 2, 5, 5));
+        txtX = new JTextField("620");
+        txtY = new JTextField("115");
+        coordPanel.add(txtX);
+        coordPanel.add(txtY);
+        inputPanel.add(coordPanel);
+
+        btnCapture = new JButton("Rileva Coordinate Mouse (3s delay)");
+        inputPanel.add(new JLabel(""));
+        inputPanel.add(btnCapture);
+
+        // Area Log
+        logArea = new JTextArea();
+        logArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(logArea);
+
+        // Pulsante Avvio
+        btnStart = new JButton("AVVIA SCANSIONE");
+        btnStart.setFont(new Font("Arial", Font.BOLD, 16));
+        btnStart.setBackground(Color.GREEN);
+
+        add(inputPanel, BorderLayout.NORTH);
+        add(scrollPane, BorderLayout.CENTER);
+        add(btnStart, BorderLayout.SOUTH);
+
+        setupEvents();
+    }
+
+    private void setupEvents() {
+        // Selezione cartella
+        btnBrowse.addActionListener(e -> {
+            JFileChooser chooser = new JFileChooser();
+            chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                txtFilePath.setText(chooser.getSelectedFile().getAbsolutePath());
+            }
+        });
+
+        // Rilevamento coordinate
+        btnCapture.addActionListener(e -> {
+            logArea.append("Posiziona il mouse... rilevamento tra 3 secondi\n");
+            Timer timer = new Timer(3000, event -> {
+                Point p = MouseInfo.getPointerInfo().getLocation();
+                txtX.setText(String.valueOf(p.x));
+                txtY.setText(String.valueOf(p.y));
+                logArea.append("Coordinate catturate: " + p.x + ", " + p.y + "\n");
+            });
+            timer.setRepeats(false);
+            timer.start();
+        });
+
+        // Avvio scansione
+        btnStart.addActionListener(e -> startScanProcess());
+    }
+
+    private void startScanProcess() {
+        // 1. Recupero dati dai campi della GUI
+        String filePath = txtFilePath.getText();
+        String fileName = txtFileName.getText();
+        int pages = Integer.parseInt(txtPages.getText());
+        int startX = Integer.parseInt(txtX.getText());
+        int startY = Integer.parseInt(txtY.getText());
+
+        // 2. Validazione preliminare
+        if (filePath.isEmpty() || fileName.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Compilare tutti i campi!");
+            return;
+        }
+
+        // 3. Esecuzione in background per non bloccare la GUI
+        btnStart.setEnabled(false); // Disabilita il tasto durante il lavoro
+        
+        SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                publish("Avvio processo... Hai 12 secondi per posizionarti.");
+                
+                // Logica originale SmartScan (Robot + POI)
+                Robot robot = new Robot();
+                XWPFDocument document = new XWPFDocument();
+                
+                // Crea cartella se non esiste
+                File directory = new File(filePath);
+                if (!directory.exists()) directory.mkdirs();
+
+                Thread.sleep(12000); // Attesa iniziale
+
+                // Rettangolo di cattura basato sui dati GUI (coordinate fisse o rilevate)
+                Rectangle screenRectangle = new Rectangle(startX, startY, 670, 865);
+
+                for (int i = 0; i < pages; i++) {
+                    publish("Scansione pagina " + (i + 1) + " di " + pages);
+                    
+                    // Cattura e Salvataggio temporaneo
+                    BufferedImage image = robot.createScreenCapture(screenRectangle);
+                    File tempImg = new File(filePath + "/temp_page_" + i + ".jpg");
+                    ImageIO.write(image, "jpg", tempImg);
+
+                    // Simulazione click cambio pagina
+                    robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                    robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                    
+                    // Inserimento in Word
+                    XWPFParagraph paragraph = document.createParagraph();
+                    paragraph.setAlignment(org.apache.poi.xwpf.usermodel.ParagraphAlignment.CENTER);
+                    XWPFRun run = paragraph.createRun();
+                    
+                    try (java.io.FileInputStream is = new java.io.FileInputStream(tempImg)) {
+                        run.addPicture(is, XWPFDocument.PICTURE_TYPE_JPEG, tempImg.getName(), 
+                                       org.apache.poi.util.Units.toEMU(620), org.apache.poi.util.Units.toEMU(780));
+                    }
+                    
+                    Thread.sleep(3000); // Pausa tra pagine
+                    tempImg.delete(); // Pulisce i file temporanei
+                }
+
+                // Salvataggio finale Word
+                try (java.io.FileOutputStream out = new java.io.FileOutputStream(filePath + "/" + fileName + ".docx")) {
+                    document.write(out);
+                }
+                return null;
+            }
+
+            @Override
+            protected void process(java.util.List<String> chunks) {
+                // Aggiorna la logArea in tempo reale
+                for (String message : chunks) {
+                    logArea.append(message + "\n");
+                }
+            }
+
+            @Override
+            protected void done() {
+                logArea.append("OPERAZIONE COMPLETATA!\n");
+                btnStart.setEnabled(true);
+                JOptionPane.showMessageDialog(null, "File Word creato con successo in: " + filePath);
+            }
+        };
+
+        worker.execute();
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            new SmartScanGUI().setVisible(true);
+        });
+    }
+}

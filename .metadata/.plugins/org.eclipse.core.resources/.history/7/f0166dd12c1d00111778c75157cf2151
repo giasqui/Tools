@@ -1,0 +1,254 @@
+package it.giasqui;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import javax.imageio.ImageIO;
+import java.math.BigInteger;
+
+// Import per Apache POI (Word)
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.util.Units;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
+
+import it.giasqui.timestamp.TimeStamp;
+
+public class SmartScanGUI extends JFrame {
+
+    private JTextField txtFilePath, txtFileName, txtPages, txtX1, txtY1, txtX2, txtY2;
+    private JButton btnBrowse, btnCapture, btnStart;
+    private JTextArea logArea;
+
+    public SmartScanGUI() {
+        setTitle("SmartScan Pro - v1.1");
+        setSize(550, 700);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout(10, 10));
+
+        // Pannello Input
+        JPanel inputPanel = new JPanel(new GridLayout(8, 2, 5, 5));
+        inputPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        inputPanel.add(new JLabel("Cartella Destinazione:"));
+        txtFilePath = new JTextField();
+        inputPanel.add(txtFilePath);
+
+        btnBrowse = new JButton("Sfoglia...");
+        inputPanel.add(new JLabel("")); 
+        inputPanel.add(btnBrowse);
+
+        inputPanel.add(new JLabel("Nome File (senza estensione):"));
+        txtFileName = new JTextField("Scansione_" + TimeStamp.timeStamp());
+        inputPanel.add(txtFileName);
+
+        inputPanel.add(new JLabel("Numero Pagine:"));
+        txtPages = new JTextField("3");
+        inputPanel.add(txtPages);
+
+        // Coordinate Vertice 1
+        inputPanel.add(new JLabel("Vertice Sup SX (X, Y):"));
+        JPanel coordPanel1 = new JPanel(new GridLayout(1, 2, 5, 5));
+        txtX1 = new JTextField("620");
+        txtY1 = new JTextField("115");
+        coordPanel1.add(txtX1);
+        coordPanel1.add(txtY1);
+        inputPanel.add(coordPanel1);
+
+        // Coordinate Vertice 2
+        inputPanel.add(new JLabel("Vertice Inf DX (X, Y):"));
+        JPanel coordPanel2 = new JPanel(new GridLayout(1, 2, 5, 5));
+        txtX2 = new JTextField("1290");
+        txtY2 = new JTextField("980");
+        coordPanel2.add(txtX2);
+        coordPanel2.add(txtY2);
+        inputPanel.add(coordPanel2);
+
+        btnCapture = new JButton("Seleziona Area con Mouse (Croce)");
+        inputPanel.add(new JLabel(""));
+        inputPanel.add(btnCapture);
+
+        // Area Log
+        logArea = new JTextArea();
+        logArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(logArea);
+
+        // Pulsante Avvio
+        btnStart = new JButton("AVVIA SCANSIONE");
+        btnStart.setFont(new Font("Arial", Font.BOLD, 16));
+        btnStart.setBackground(Color.GREEN);
+
+        add(inputPanel, BorderLayout.NORTH);
+        add(scrollPane, BorderLayout.CENTER);
+        add(btnStart, BorderLayout.SOUTH);
+
+        setupEvents();
+    }
+
+    private void setupEvents() {
+        btnBrowse.addActionListener(e -> {
+            JFileChooser chooser = new JFileChooser();
+            chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                txtFilePath.setText(chooser.getSelectedFile().getAbsolutePath());
+            }
+        });
+
+        btnCapture.addActionListener(e -> {
+            logArea.append("Modalità selezione area attivata...\n");
+            new AreaSelector();
+        });
+
+        btnStart.addActionListener(e -> startScanProcess());
+    }
+
+    // Classe interna per l'overlay di selezione area
+    private class AreaSelector extends JWindow {
+        private Point start;
+
+        public AreaSelector() {
+            setBackground(new Color(0, 0, 0, 1)); // Trasparente (Java 7+)
+            setSize(Toolkit.getDefaultToolkit().getScreenSize());
+            setCursor(new Cursor(Cursor.CROSSHAIR_CURSOR));
+            setAlwaysOnTop(true);
+            setVisible(true);
+
+            addMouseListener(new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    start = e.getPoint();
+                    txtX1.setText(String.valueOf(start.x));
+                    txtY1.setText(String.valueOf(start.y));
+                }
+
+                @Override
+                public void mouseReleased(MouseEvent e) {
+                    Point end = e.getPoint();
+                    txtX2.setText(String.valueOf(end.x));
+                    txtY2.setText(String.valueOf(end.y));
+                    dispose();
+                    logArea.append("Area definita: [" + start.x + "," + start.y + "] -> [" + end.x + "," + end.y + "]\n");
+                }
+            });
+        }
+    }
+
+    private void startScanProcess() {
+        String filePath = txtFilePath.getText();
+        String fileName = txtFileName.getText();
+        
+        int pVal, x1Val, y1Val, x2Val, y2Val;
+
+        try {
+            pVal = Integer.parseInt(txtPages.getText());
+            x1Val = Integer.parseInt(txtX1.getText());
+            y1Val = Integer.parseInt(txtY1.getText());
+            x2Val = Integer.parseInt(txtX2.getText());
+            y2Val = Integer.parseInt(txtY2.getText());
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Errore: Inserisci solo numeri interi per pagine e coordinate!");
+            return;
+        }
+
+        if (filePath.isEmpty() || fileName.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Compilare tutti i campi!");
+            return;
+        }
+
+        // Calcolo dimensioni dinamiche
+        final int pages = pVal;
+        final int startX = x1Val;
+        final int startY = y1Val;
+        final int width = x2Val - x1Val;
+        final int height = y2Val - y1Val;
+
+        if (width <= 0 || height <= 0) {
+            JOptionPane.showMessageDialog(this, "Area non valida! Il vertice Inf DX deve essere oltre il Sup SX.");
+            return;
+        }
+
+        btnStart.setEnabled(false);
+        
+        SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                publish("Avvio processo... Hai 12 secondi per posizionarti sulla finestra target.");
+                
+                Robot robot = new Robot();
+                XWPFDocument document = new XWPFDocument();
+                
+                // Reset Margini Word (A tutta pagina)
+                CTSectPr sectPr = document.getDocument().getBody().addNewSectPr();
+                CTPageMar pageMar = sectPr.addNewPgMar();
+                pageMar.setLeft(BigInteger.ZERO);
+                pageMar.setTop(BigInteger.ZERO);
+                pageMar.setRight(BigInteger.ZERO);
+                pageMar.setBottom(BigInteger.ZERO);
+
+                File directory = new File(filePath);
+                if (!directory.exists()) directory.mkdirs();
+
+                File printscreenDir = new File(directory, "printscreen");
+                if (!printscreenDir.exists()) printscreenDir.mkdirs();
+                
+                Thread.sleep(12000);
+
+                Rectangle screenRectangle = new Rectangle(startX, startY, width, height);
+
+                for (int i = 0; i < pages; i++) {
+                    publish("Cattura pagina " + (i + 1) + " di " + pages);
+                    
+                    BufferedImage image = robot.createScreenCapture(screenRectangle);
+                    File imgFile = new File(printscreenDir, TimeStamp.timeStamp() + "_page_" + (i + 1) + ".jpg");
+                    ImageIO.write(image, "jpg", imgFile);
+
+                    // Click per cambio pagina
+                    robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                    robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                    
+                    XWPFParagraph paragraph = document.createParagraph();
+                    paragraph.setAlignment(org.apache.poi.xwpf.usermodel.ParagraphAlignment.CENTER);
+                    XWPFRun run = paragraph.createRun();
+                    
+                    try (FileInputStream is = new FileInputStream(imgFile)) {
+                        run.addPicture(is, XWPFDocument.PICTURE_TYPE_JPEG, imgFile.getName(), 
+                                       Units.toEMU(width > 620 ? 600 : width), Units.toEMU(height > 800 ? 750 : height));
+                    }
+                    Thread.sleep(1500);
+                }
+
+                try (FileOutputStream out = new FileOutputStream(filePath + "/" + fileName + ".docx")) {
+                    document.write(out);
+                }
+                return null;
+            }
+
+            @Override
+            protected void process(java.util.List<String> chunks) {
+                for (String message : chunks) {
+                    logArea.append(message + "\n");
+                }
+            }
+
+            @Override
+            protected void done() {
+                logArea.append("OPERAZIONE COMPLETATA!\n");
+                btnStart.setEnabled(true);
+                JOptionPane.showMessageDialog(null, "Documento creato con successo!");
+            }
+        };
+
+        worker.execute();
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> new SmartScanGUI().setVisible(true));
+    }
+}

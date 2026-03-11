@@ -1,0 +1,301 @@
+package it.giasqui;
+
+import javax.swing.*;
+import javax.swing.border.TitledBorder;
+import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import javax.imageio.ImageIO;
+import java.math.BigInteger;
+
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.util.Units;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
+
+import it.giasqui.timestamp.TimeStamp;
+
+public class SmartScanGUI extends JFrame {
+
+    private JTextField txtFilePath, txtFileName, txtPages, txtX1, txtY1, txtX2, txtY2, txtClickX, txtClickY;
+    private JTextField txtMarginTop, txtMarginBottom, txtMarginLeft, txtMarginRight;
+    private JButton btnBrowse, btnCaptureArea, btnCaptureClick, btnStart;
+    private JTextArea logArea;
+
+    public SmartScanGUI() {
+        setTitle("SmartScan Pro - v1.7");
+        setSize(500, 900);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout(10, 10));
+
+        // Pannello Superiore: Configurazione Generale
+        JPanel configPanel = new JPanel(new GridLayout(4, 2, 5, 5));
+        configPanel.setBorder(BorderFactory.createTitledBorder("Configurazione File"));
+        
+        configPanel.add(new JLabel("Cartella Destinazione:"));
+        txtFilePath = new JTextField();
+        configPanel.add(txtFilePath);
+
+        configPanel.add(new JLabel("")); 
+        btnBrowse = new JButton("Sfoglia...");
+        configPanel.add(btnBrowse);
+
+        configPanel.add(new JLabel("Nome File:"));
+        txtFileName = new JTextField("Scansione_" + TimeStamp.timeStamp());
+        configPanel.add(txtFileName);
+
+        configPanel.add(new JLabel("Numero Pagine:"));
+        txtPages = new JTextField("3");
+        configPanel.add(txtPages);
+
+        // Pannello Centrale: Contenitore dei gruppi (Box)
+        JPanel mainInputPanel = new JPanel();
+        mainInputPanel.setLayout(new BoxLayout(mainInputPanel, BoxLayout.Y_AXIS));
+
+        // GRUPPO 1: SELEZIONE AREA
+        JPanel areaPanel = new JPanel(new GridLayout(3, 2, 5, 5));
+        areaPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), "1. Selezione Area", TitledBorder.LEFT, TitledBorder.TOP));
+        
+        txtX1 = new JTextField("0"); txtY1 = new JTextField("0");
+        txtX2 = new JTextField("0"); txtY2 = new JTextField("0");
+        btnCaptureArea = new JButton("Cattura Area");
+
+        areaPanel.add(new JLabel("Sup SX (X, Y):"));
+        JPanel p1 = new JPanel(new GridLayout(1, 2, 2, 2)); p1.add(txtX1); p1.add(txtY1);
+        areaPanel.add(p1);
+        areaPanel.add(new JLabel("Inf DX (X, Y):"));
+        JPanel p2 = new JPanel(new GridLayout(1, 2, 2, 2)); p2.add(txtX2); p2.add(txtY2);
+        areaPanel.add(p2);
+        areaPanel.add(new JLabel(""));
+        areaPanel.add(btnCaptureArea);
+
+        // GRUPPO 2: PUNTO CLICK
+        JPanel clickPanel = new JPanel(new GridLayout(2, 2, 5, 5));
+        clickPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), "2. Punto Click Cambio Pagina", TitledBorder.LEFT, TitledBorder.TOP));
+        
+        txtClickX = new JTextField("0"); txtClickY = new JTextField("0");
+        btnCaptureClick = new JButton("Rileva Punto");
+
+        clickPanel.add(new JLabel("Coordinate (X, Y):"));
+        JPanel p3 = new JPanel(new GridLayout(1, 2, 2, 2)); p3.add(txtClickX); p3.add(txtClickY);
+        clickPanel.add(p3);
+        clickPanel.add(new JLabel(""));
+        clickPanel.add(btnCaptureClick);
+
+        // GRUPPO 3: MARGINI
+        JPanel marginPanel = new JPanel(new GridLayout(2, 2, 5, 5));
+        marginPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), "3. Margini Word (cm)", TitledBorder.LEFT, TitledBorder.TOP));
+        
+        txtMarginTop = new JTextField("0"); txtMarginBottom = new JTextField("0");
+        txtMarginLeft = new JTextField("0"); txtMarginRight = new JTextField("0");
+
+        marginPanel.add(new JLabel("Top / Bottom:"));
+        JPanel p4 = new JPanel(new GridLayout(1, 2, 2, 2)); p4.add(txtMarginTop); p4.add(txtMarginBottom);
+        marginPanel.add(p4);
+        marginPanel.add(new JLabel("Left / Right:"));
+        JPanel p5 = new JPanel(new GridLayout(1, 2, 2, 2)); p5.add(txtMarginLeft); p5.add(txtMarginRight);
+        marginPanel.add(p5);
+
+        // Aggiunta dei gruppi al pannello principale
+        mainInputPanel.add(configPanel);
+        mainInputPanel.add(areaPanel);
+        mainInputPanel.add(clickPanel);
+        mainInputPanel.add(marginPanel);
+
+        // Area Log
+        logArea = new JTextArea(8, 20);
+        logArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(logArea);
+
+        // Pulsante Avvio
+        btnStart = new JButton("AVVIA SCANSIONE");
+        btnStart.setFont(new Font("Arial", Font.BOLD, 18));
+        btnStart.setBackground(new Color(34, 139, 34));
+        btnStart.setForeground(Color.WHITE);
+
+        add(mainInputPanel, BorderLayout.NORTH);
+        add(scrollPane, BorderLayout.CENTER);
+        add(btnStart, BorderLayout.SOUTH);
+
+        setupEvents();
+    }
+
+    private BigInteger cmToTwips(String cmValue) {
+        try {
+            double cm = Double.parseDouble(cmValue.replace(",", "."));
+            return BigInteger.valueOf(Math.round((cm / 2.54) * 1440));
+        } catch (Exception e) { return BigInteger.ZERO; }
+    }
+
+    private void setupEvents() {
+        btnBrowse.addActionListener(e -> {
+            JFileChooser chooser = new JFileChooser();
+            chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                txtFilePath.setText(chooser.getSelectedFile().getAbsolutePath());
+            }
+        });
+        btnCaptureArea.addActionListener(e -> new AreaSelector(true));
+        btnCaptureClick.addActionListener(e -> new AreaSelector(false));
+        btnStart.addActionListener(e -> startScanProcess());
+    }
+
+    private class AreaSelector extends JWindow {
+        private Point startPoint;
+        private boolean isAreaMode;
+
+        public AreaSelector(boolean areaMode) {
+            this.isAreaMode = areaMode;
+            setBackground(new Color(0, 0, 0, 1));
+            setSize(Toolkit.getDefaultToolkit().getScreenSize());
+            setCursor(new Cursor(Cursor.CROSSHAIR_CURSOR));
+            setAlwaysOnTop(true);
+            addMouseListener(new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    if (isAreaMode) startPoint = e.getPoint();
+                    else {
+                        txtClickX.setText(String.valueOf(e.getX()));
+                        txtClickY.setText(String.valueOf(e.getY()));
+                        dispose();
+                    }
+                }
+                @Override
+                public void mouseReleased(MouseEvent e) {
+                    if (isAreaMode && startPoint != null) {
+                        txtX1.setText(String.valueOf(Math.min(startPoint.x, e.getX())));
+                        txtY1.setText(String.valueOf(Math.min(startPoint.y, e.getY())));
+                        txtX2.setText(String.valueOf(Math.max(startPoint.x, e.getX())));
+                        txtY2.setText(String.valueOf(Math.max(startPoint.y, e.getY())));
+                        dispose();
+                    }
+                }
+            });
+            if (isAreaMode) addMouseMotionListener(new MouseMotionAdapter() {
+                @Override public void mouseDragged(MouseEvent e) { repaint(); }
+            });
+            setVisible(true);
+        }
+
+        @Override
+        public void paint(Graphics g) {
+            super.paint(g);
+            if (isAreaMode && startPoint != null) {
+                Point current = MouseInfo.getPointerInfo().getLocation();
+                SwingUtilities.convertPointFromScreen(current, this);
+                Graphics2D g2d = (Graphics2D) g;
+                g2d.setColor(new Color(0, 120, 215, 60));
+                int x = Math.min(startPoint.x, current.x);
+                int y = Math.min(startPoint.y, current.y);
+                int w = Math.abs(startPoint.x - current.x);
+                int h = Math.abs(startPoint.y - current.y);
+                g2d.fillRect(x, y, w, h);
+                g2d.setColor(new Color(0, 120, 215));
+                g2d.drawRect(x, y, w, h);
+            }
+        }
+    }
+
+    private void startScanProcess() {
+        String filePath = txtFilePath.getText();
+        String fileName = txtFileName.getText();
+        final int pages, sX, sY, w, h, cX, cY;
+        final BigInteger mT = cmToTwips(txtMarginTop.getText()), mB = cmToTwips(txtMarginBottom.getText()), 
+                           mL = cmToTwips(txtMarginLeft.getText()), mR = cmToTwips(txtMarginRight.getText());
+
+        try {
+            pages = Integer.parseInt(txtPages.getText());
+            int x1 = Integer.parseInt(txtX1.getText()), y1 = Integer.parseInt(txtY1.getText());
+            int x2 = Integer.parseInt(txtX2.getText()), y2 = Integer.parseInt(txtY2.getText());
+            sX = x1; sY = y1; w = x2 - x1; h = y2 - y1;
+            cX = Integer.parseInt(txtClickX.getText()); cY = Integer.parseInt(txtClickY.getText());
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Dati numerici non validi!");
+            return;
+        }
+
+        btnStart.setEnabled(false);
+        new SwingWorker<Void, String>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                publish("Avvio in 5 secondi...");
+                Robot robot = new Robot();
+                XWPFDocument doc = new XWPFDocument();
+                CTSectPr sectPr = doc.getDocument().getBody().addNewSectPr();
+                CTPageMar pageMar = sectPr.addNewPgMar();
+                pageMar.setTop(mT); pageMar.setBottom(mB); pageMar.setLeft(mL); pageMar.setRight(mR);
+
+                File dir = new File(filePath); if (!dir.exists()) dir.mkdirs();
+                File psDir = new File(dir, "printscreen"); if (!psDir.exists()) psDir.mkdirs();
+
+                Thread.sleep(5000);
+                Rectangle rect = new Rectangle(sX, sY, w, h);
+
+                for (int i = 0; i < pages; i++) {
+                    publish("Pagina " + (i + 1));
+                    BufferedImage img = robot.createScreenCapture(rect);
+                    File imgFile = new File(psDir, TimeStamp.timeStamp() + "_p" + (i + 1) + ".jpg");
+                    ImageIO.write(img, "jpg", imgFile);
+
+                    robot.mouseMove(cX, cY);
+                    robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                    robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+
+                    XWPFParagraph para = doc.createParagraph();
+                    para.setAlignment(org.apache.poi.xwpf.usermodel.ParagraphAlignment.CENTER);
+                    XWPFRun run = para.createRun();
+
+                    try (FileInputStream is = new FileInputStream(imgFile)) {
+                        // 1. Calcoliamo lo spazio disponibile sul foglio A4 (in EMU)
+                        // Un foglio A4 è circa 21cm x 29.7cm. In EMU sono ~7.500.000 x 10.600.000
+                        // Sottraiamo i margini impostati dall'utente (convertiti da cm a EMU)
+                        long availableWidthEmu = Units.toEMU(21 * 28.34) - (mT.longValue() + mB.longValue()); // Approssimativo
+                        
+                        // Per semplicità e stabilità OCR, usiamo un limite standard A4 (circa 15.5cm di larghezza utile)
+                        long maxWidthEmu = Units.toEMU(440);  // Larghezza massima standard foglio A4 in punti
+                        long maxHeightEmu = Units.toEMU(650); // Altezza massima standard foglio A4 in punti
+
+                        long emuWidth = (long) w * 9525;
+                        long emuHeight = (long) h * 9525;
+
+                        // 2. LOGICA DI SCALING PROPORZIONALE (Solo se sfora)
+                        double scale = 1.0;
+                        if (emuWidth > maxWidthEmu) {
+                            scale = (double) maxWidthEmu / emuWidth;
+                        }
+                        if (emuHeight * scale > maxHeightEmu) {
+                            scale = (double) maxHeightEmu / (emuHeight * scale);
+                        }
+
+                        int finalWidth = (int) (emuWidth * scale);
+                        int finalHeight = (int) (emuHeight * scale);
+
+                        run.addPicture(is, XWPFDocument.PICTURE_TYPE_JPEG, imgFile.getName(), 
+                                       finalWidth, finalHeight);
+                    }
+                    
+                    Thread.sleep(1500);
+                }
+                try (FileOutputStream out = new FileOutputStream(new File(dir, fileName + ".docx"))) { doc.write(out); }
+                return null;
+            }
+            @Override protected void process(java.util.List<String> chunks) { for (String m : chunks) logArea.append(m + "\n"); }
+            @Override protected void done() {
+                logArea.append("Completato.\n");
+                btnStart.setEnabled(true);
+                JOptionPane.showMessageDialog(null, "Documento creato!");
+            }
+        }.execute();
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> new SmartScanGUI().setVisible(true));
+    }
+}
